@@ -15,7 +15,7 @@ import time
 import tkinter as tk
 from datetime import datetime, timedelta
 from pathlib import Path
-from tkinter import font as tkfont, messagebox
+from tkinter import filedialog, font as tkfont, messagebox
 from typing import Optional
 
 from .parser import NaylaError, load_nayla
@@ -74,7 +74,7 @@ def mix(first: str, second: str, amount: float) -> str:
 class NaylaApp(tk.Tk):
     def __init__(self, initial_file: Optional[str] = None) -> None:
         super().__init__()
-        self.title("dotnay")
+        self.title("untitled.nayla")
         self.geometry("1000x760")
         self.minsize(760, 580)
         self.configure(bg=BG)
@@ -110,6 +110,7 @@ class NaylaApp(tk.Tk):
         png = ASSET_DIR / "nayla.png"
         if sys.platform == "win32" and ico.exists():
             try:
+                self.iconbitmap(str(ico))
                 self.iconbitmap(default=str(ico))
             except tk.TclError:
                 pass
@@ -198,20 +199,11 @@ class NaylaApp(tk.Tk):
             return
         self._dirty = True
         self._update_save_button()
+        self._update_window_title()
         self._status_to_name()
 
-    def _draft_path(self) -> Path:
-        DRAFT_DIR.mkdir(parents=True, exist_ok=True)
-        stamp = datetime.now().strftime("%Y-%m-%d-%H%M%S")
-        path = DRAFT_DIR / f"nayla-{stamp}.nayla"
-        counter = 2
-        while path.exists():
-            path = DRAFT_DIR / f"nayla-{stamp}-{counter}.nayla"
-            counter += 1
-        return path
-
     def _save(self) -> None:
-        """Save the note, asking for its one-time timer on first save."""
+        """Save the note, asking for its one-time timer and filename first."""
         if self._fading or self._closing:
             return
         content = self.note.get("1.0", "end-1c")
@@ -236,6 +228,7 @@ class NaylaApp(tk.Tk):
 
         self._dirty = False
         self._update_save_button()
+        self._update_window_title()
         self._status_to_name()
 
     def _show_timer_dialog(self) -> None:
@@ -291,8 +284,7 @@ class NaylaApp(tk.Tk):
         error = tk.Label(body, text="", bg=BG, fg=RED, font=self.font_status, anchor="w")
         error.pack(fill="x", pady=(8, 0))
 
-        def start_timer() -> None:
-            started_at = datetime.now().replace(microsecond=0)
+        def save_note() -> None:
             try:
                 hours, minutes, seconds = (int(value.get()) for value in values)
             except ValueError:
@@ -305,9 +297,31 @@ class NaylaApp(tk.Tk):
             if duration.total_seconds() <= 0:
                 error.configure(text="set a timer longer than zero")
                 return
+
+            try:
+                DRAFT_DIR.mkdir(parents=True, exist_ok=True)
+            except OSError as exc:
+                error.configure(text=f"could not open save location: {exc}")
+                return
+
+            selected_path = filedialog.asksaveasfilename(
+                parent=dialog,
+                title="Save note",
+                initialdir=str(DRAFT_DIR),
+                initialfile="untitled.nayla",
+                defaultextension=".nayla",
+                filetypes=(("Nayla notes", "*.nayla"), ("All files", "*.*")),
+            )
+            if not selected_path:
+                return
+
+            path = Path(selected_path)
+            if path.suffix.lower() != ".nayla":
+                path = path.with_suffix(".nayla")
+
+            started_at = datetime.now().replace(microsecond=0)
             expires_at = started_at + duration
             try:
-                path = self._draft_path()
                 expiry_spec = expires_at.strftime("%Y-%m-%d %H:%M:%S")
                 write_nayla(path, expiry_spec, self.note.get("1.0", "end-1c"))
             except OSError as exc:
@@ -318,6 +332,7 @@ class NaylaApp(tk.Tk):
             self._expiry_at = expires_at
             self._dirty = False
             self._update_save_button()
+            self._update_window_title()
             self._status_to_name()
             self._paint_countdown(format_remaining(expires_at - datetime.now()))
             dialog.destroy()
@@ -327,7 +342,7 @@ class NaylaApp(tk.Tk):
         tk.Button(
             body,
             text="SAVE",
-            command=start_timer,
+            command=save_note,
             bg=RED,
             fg=TEXT,
             activebackground=RED,
@@ -341,7 +356,7 @@ class NaylaApp(tk.Tk):
             pady=9,
         ).pack(anchor="e", pady=(14, 0))
         dialog.protocol("WM_DELETE_WINDOW", self._close_timer_dialog)
-        dialog.bind("<Return>", lambda _event: start_timer())
+        dialog.bind("<Return>", lambda _event: save_note())
         dialog.grab_set()
 
     def _close_timer_dialog(self) -> None:
@@ -357,6 +372,10 @@ class NaylaApp(tk.Tk):
             self.save_button.configure(text="SAVE", state="normal")
         else:
             self.save_button.configure(text="SAVE", state="disabled")
+
+    def _update_window_title(self) -> None:
+        filename = self._path.name if self._path is not None else "untitled.nayla"
+        self.title(f"{filename}{'*' if self._dirty else ''}")
 
     # -- countdown ---------------------------------------------------------
 
@@ -452,6 +471,7 @@ class NaylaApp(tk.Tk):
         self.note.edit_modified(False)
         self._suspended = False
         self._dirty = False
+        self._update_window_title()
         self.note.focus_set()
 
     # -- opening a file ----------------------------------------------------
@@ -477,6 +497,7 @@ class NaylaApp(tk.Tk):
         self._path = path
         self._expiry_at = document.expires_at
         self._dirty = False
+        self._update_window_title()
         self._suspended = True
         self.note.configure(state="normal", fg=TEXT)
         self.note.delete("1.0", "end")
@@ -504,10 +525,7 @@ class NaylaApp(tk.Tk):
 
     def _status_to_name(self) -> None:
         self._status_job = None
-        if self._path is not None:
-            name = self._path.name + ("*" if self._dirty else "")
-        else:
-            name = "untitled*" if self._dirty else ""
+        name = self._path.name if self._path is not None else ""
         self.status.configure(text=name, fg=MUTED)
 
     # -- lifecycle ---------------------------------------------------------
