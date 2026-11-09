@@ -85,15 +85,15 @@ nayla examples/short-lived.nayla
 
 ## Desktop app
 
-One calm screen: one big text box, a save button, and a small live countdown.
-There is no open button; launch a `.nayla` file to reopen it.
+One calm screen: a large note editor, a prominent countdown at the top, and a
+save button with generous bottom spacing. There is no open button; launch a
+`.nayla` file to reopen it.
 
-- **Save and timer.** Write your note and click `SAVE & SET TIMER`. Choose
-  `1H`, `24H`, `7D`, or `CUSTOM` (a duration like `90m` or an exact date like
-  `2026-11-10 18:00`). The timer starts when the note is saved. A new note is
+- **Save and timer.** Write your note and click `START`. Set the timer with
+  hour, minute, and second fields, then click `START` to save. A new note is
   created in `Documents/dotnay/`; its name is shown quietly at the bottom.
-- **Reopen.** The note text remains editable and can be saved, but its timer is
-  locked. The original countdown continues and is never reset by editing.
+- **Reopen.** The note text remains editable and can be saved, but the
+  countdown at the top is locked and continues from its original deadline.
 - **The end.** The countdown keeps running while you edit. At zero the text
   fades into the background, then the `.nayla` file is deleted.
 
@@ -158,6 +158,7 @@ python -m unittest discover -s tests -t . -v
 ## Roadmap
 
 1. Parser and format specification (done).
-2. Single-screen editor with autosave, live countdown, and self-deletion (done).
+2. Single-screen editor with manual save, a one-time timer, live countdown,
+   and self-deletion (done).
 3. `.nayla` file association for double-click opening (no "Open" button).
 4. Background checker that removes expired files.

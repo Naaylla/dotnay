@@ -13,12 +13,12 @@ import math
 import sys
 import time
 import tkinter as tk
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from tkinter import font as tkfont, messagebox
 from typing import Optional
 
-from .parser import NaylaError, load_nayla, parse_nayla
+from .parser import NaylaError, load_nayla
 from .timefmt import format_remaining
 from .writer import write_nayla
 
@@ -33,9 +33,6 @@ RED_SELECT = "#3a0f0a"
 
 ASSET_DIR = Path(__file__).resolve().parent / "assets"
 DRAFT_DIR = Path.home() / "Documents" / "dotnay"
-
-DEFAULT_SPEC = "24h"
-
 
 # --- colour helpers --------------------------------------------------------
 
@@ -67,7 +64,6 @@ class NaylaApp(tk.Tk):
 
         # state
         self._icon = None
-        self._logo = None
         self._path: Optional[Path] = None
         self._expiry_at: Optional[datetime] = None
         self._timer_dialog = None
@@ -104,10 +100,8 @@ class NaylaApp(tk.Tk):
             try:
                 self._icon = tk.PhotoImage(file=str(png))
                 self.iconphoto(True, self._icon)
-                self._logo = self._icon.subsample(8)  # 256px -> 32px
             except tk.TclError:
                 self._icon = None
-                self._logo = None
 
     def _build_fonts(self) -> None:
         # One family for the whole interface.
@@ -120,24 +114,19 @@ class NaylaApp(tk.Tk):
         self.font_ui = tkfont.Font(root=self, family=family, size=9)
         self.font_chip = tkfont.Font(root=self, family=family, size=9, weight="bold")
         self.font_editor = tkfont.Font(root=self, family=family, size=13)
-        self.font_count = tkfont.Font(root=self, family=family, size=13, weight="bold")
+        self.font_count = tkfont.Font(root=self, family=family, size=16, weight="bold")
         self.font_status = tkfont.Font(root=self, family=family, size=8)
 
     def _build_ui(self) -> None:
         top = tk.Frame(self, bg=BG)
-        top.pack(fill="x", padx=26, pady=(20, 0))
+        top.pack(fill="x", padx=54, pady=(28, 0))
 
-        if self._logo is not None:
-            tk.Label(top, image=self._logo, bg=BG).pack(side="left")
-
-        self.timer_state = tk.Label(
-            top, text="TIMER STARTS WHEN SAVED", bg=BG, fg=MUTED, font=self.font_chip
-        )
-        self.timer_state.pack(side="left", padx=(14, 0))
-
-        # Small live countdown, right-aligned in the top bar.
-        self.count = tk.Canvas(top, width=190, height=28, bg=BG, highlightthickness=0)
-        self.count.pack(side="right", pady=(2, 0))
+        tk.Label(
+            top, text="dies in…", bg=BG, fg=MUTED, font=self.font_ui
+        ).pack(side="left", anchor="s", pady=(0, 7))
+        self.count = tk.Canvas(top, width=300, height=40, bg=BG, highlightthickness=0)
+        self.count.pack(side="right")
+        self._paint_countdown("--:--:--")
 
         # One big, borderless text box with space around it.
         self.note = tk.Text(
@@ -160,14 +149,14 @@ class NaylaApp(tk.Tk):
         self.note.focus_set()
 
         bottom = tk.Frame(self, bg=BG)
-        bottom.pack(fill="x", padx=54, pady=(0, 16))
+        bottom.pack(fill="x", padx=54, pady=(0, 32))
         self.status = tk.Label(
             bottom, text="", bg=BG, fg=MUTED, font=self.font_status, anchor="w"
         )
         self.status.pack(side="left")
         self.save_button = tk.Button(
             bottom,
-            text="SAVE & SET TIMER",
+            text="START",
             command=self._save,
             bg=PAPER,
             fg=TEXT,
@@ -194,7 +183,7 @@ class NaylaApp(tk.Tk):
             return
         self._dirty = True
         self.save_button.configure(
-            text="SAVE & SET TIMER" if self._path is None else "SAVE CHANGES",
+            text="START" if self._path is None else "SAVE CHANGES",
             state="normal",
         )
         self._status_note("unsaved changes")
@@ -253,94 +242,79 @@ class NaylaApp(tk.Tk):
         body.pack(fill="both", expand=True)
         tk.Label(
             body,
-            text="Choose a timer. It starts when this note is saved.",
+            text="Set how long this note lasts",
             bg=BG,
             fg=TEXT,
             font=self.font_ui,
         ).pack(anchor="w", pady=(0, 14))
 
-        selected = tk.StringVar(value=DEFAULT_SPEC)
-        choices = tk.Frame(body, bg=BG)
-        choices.pack(anchor="w", pady=(0, 12))
-        for spec, label in (("1h", "1 HOUR"), ("24h", "24 HOURS"), ("7d", "7 DAYS"), ("custom", "CUSTOM")):
-            tk.Radiobutton(
-                choices,
-                text=label,
-                variable=selected,
-                value=spec,
-                indicatoron=False,
-                selectcolor=RED_SELECT,
-                bg=BG,
+        fields = tk.Frame(body, bg=BG)
+        fields.pack(anchor="w")
+        values = (tk.StringVar(value="24"), tk.StringVar(value="00"), tk.StringVar(value="00"))
+        for label, value, maximum in zip(
+            ("hours", "minutes", "seconds"), values, (999, 59, 59)
+        ):
+            column = tk.Frame(fields, bg=BG)
+            column.pack(side="left", padx=(0, 14))
+            tk.Label(
+                column, text=label, bg=BG, fg=MUTED, font=self.font_status
+            ).pack(anchor="center", pady=(0, 5))
+            tk.Spinbox(
+                column,
+                from_=0,
+                to=maximum,
+                textvariable=value,
+                width=5,
+                justify="center",
+                format="%02.0f",
+                bg=PAPER,
                 fg=TEXT,
-                activebackground=BG,
-                activeforeground=RED,
-                bd=0,
-                padx=10,
-                pady=7,
-                font=self.font_chip,
-            ).pack(side="left", padx=(0, 6))
-
-        tk.Label(
-            body,
-            text="Custom duration (90m) or local date and time",
-            bg=BG,
-            fg=MUTED,
-            font=self.font_status,
-        ).pack(anchor="w", pady=(0, 5))
-        custom_entry = tk.Entry(
-            body,
-            width=30,
-            bg=PAPER,
-            fg=TEXT,
-            insertbackground=RED,
-            relief="flat",
-            highlightthickness=0,
-            font=self.font_ui,
-        )
-        custom_entry.pack(fill="x", ipady=7)
-        custom_entry.bind("<FocusIn>", lambda _event: selected.set("custom"))
+                insertbackground=RED,
+                buttonbackground=PAPER,
+                relief="flat",
+                highlightthickness=0,
+                font=self.font_count,
+            ).pack(ipady=5)
 
         error = tk.Label(body, text="", bg=BG, fg=RED, font=self.font_status, anchor="w")
         error.pack(fill="x", pady=(8, 0))
 
         def start_timer() -> None:
-            spec = selected.get()
-            if spec == "custom":
-                spec = custom_entry.get().strip()
-            started_at = datetime.now()
+            started_at = datetime.now().replace(microsecond=0)
             try:
-                document = parse_nayla(
-                    f"NAYLA\nexpires: {spec}\n---\n",
-                    created_at=started_at,
-                )
-            except NaylaError as exc:
-                error.configure(text=str(exc))
+                hours, minutes, seconds = (int(value.get()) for value in values)
+            except ValueError:
+                error.configure(text="enter a whole number in each field")
                 return
-            if document.expires_at <= started_at:
-                error.configure(text="that time has already passed")
+            if not 0 <= hours <= 999 or not 0 <= minutes <= 59 or not 0 <= seconds <= 59:
+                error.configure(text="hours must be 0–999; minutes and seconds 0–59")
                 return
+            duration = timedelta(hours=hours, minutes=minutes, seconds=seconds)
+            if duration.total_seconds() <= 0:
+                error.configure(text="set a timer longer than zero")
+                return
+            expires_at = started_at + duration
             try:
                 path = self._draft_path()
-                expiry_spec = document.expires_at.strftime("%Y-%m-%d %H:%M:%S")
+                expiry_spec = expires_at.strftime("%Y-%m-%d %H:%M:%S")
                 write_nayla(path, expiry_spec, self.note.get("1.0", "end-1c"))
-            except (NaylaError, OSError) as exc:
+            except OSError as exc:
                 error.configure(text=f"could not save: {exc}")
                 return
 
             self._path = path
-            self._expiry_at = document.expires_at
+            self._expiry_at = expires_at
             self._dirty = False
-            self.timer_state.configure(text="TIMER LOCKED", fg=RED)
             self._update_save_button()
             self._status_note(f"{path.name}  -  saved", hold=1400)
-            self._paint_countdown(format_remaining(document.remaining()))
+            self._paint_countdown(format_remaining(expires_at - datetime.now()))
             dialog.destroy()
             self._timer_dialog = None
             self.note.focus_set()
 
         tk.Button(
             body,
-            text="START TIMER & SAVE",
+            text="START",
             command=start_timer,
             bg=RED,
             fg=TEXT,
@@ -366,7 +340,7 @@ class NaylaApp(tk.Tk):
 
     def _update_save_button(self) -> None:
         if self._path is None:
-            self.save_button.configure(text="SAVE & SET TIMER", state="normal")
+            self.save_button.configure(text="START", state="normal")
         elif self._dirty:
             self.save_button.configure(text="SAVE CHANGES", state="normal")
         else:
@@ -391,7 +365,7 @@ class NaylaApp(tk.Tk):
         width = self.count.winfo_width()
         height = self.count.winfo_height()
         if width < 50:  # not laid out yet
-            width, height = 190, 28
+            width, height = 300, 40
         center_x, center_y = width / 2, height / 2
 
         pulse = 0.5 + 0.5 * math.sin(time.monotonic() * (6.0 if urgent else 1.6))
@@ -446,8 +420,8 @@ class NaylaApp(tk.Tk):
         self._expiry_at = None
         self._fading = False
         self._clear_editor()
-        self.timer_state.configure(text="TIMER STARTS WHEN SAVED", fg=MUTED)
         self._update_save_button()
+        self._paint_countdown("--:--:--")
         self._status_note("the note is gone", hold=2600)
 
     def _clear_editor(self) -> None:
@@ -489,7 +463,6 @@ class NaylaApp(tk.Tk):
         self.note.edit_modified(False)
         self._suspended = False
 
-        self.timer_state.configure(text="TIMER LOCKED", fg=RED)
         self._update_save_button()
         self._status_to_name()
         self.note.focus_set()
