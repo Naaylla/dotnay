@@ -99,6 +99,16 @@ reopen it.
   countdown at the top is locked and continues from its original deadline.
 - **The end.** The countdown keeps running while you edit. At zero the text
   fades into the background, then the `.nayla` file is deleted.
+- **Windows file icon.** Register the `.nayla` extension for your Windows
+  user to display the burning-N icon in Explorer and open notes with dotnay:
+
+  ```powershell
+  pip install -e .
+  python -m dotnay.file_association
+  ```
+
+  This sets dotnay as the default app for `.nayla` files for the current user.
+  Windows may take a moment to refresh existing file icons.
 
 Requires only Python and Tkinter (bundled with the official Windows/macOS
 installers):
@@ -129,6 +139,7 @@ dotnay/
     timefmt.py
     cli.py
     app.py
+    file_association.py
     assets/
       nayla.png
       nayla.ico
@@ -137,6 +148,7 @@ dotnay/
     short-lived.nayla
     exact-date.nayla
   tests/
+    test_file_association.py
     test_parser.py
     test_writer.py
     test_timefmt.py
