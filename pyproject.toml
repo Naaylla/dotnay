@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dotnay"
+version = "0.1.0"
+description = "A self-destructing plain-text note format."
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+
+[project.scripts]
+nayla = "dotnay.cli:main"
+
+[project.gui-scripts]
+dotnay = "dotnay.app:main"
+
+[tool.setuptools]
+packages = ["dotnay"]
+
+[tool.setuptools.package-data]
+dotnay = ["assets/*"]
