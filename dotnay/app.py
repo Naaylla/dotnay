@@ -31,6 +31,23 @@ MUTED = "#575761"
 RED = "#ff2d1a"       # the only accent
 RED_SELECT = "#3a0f0a"
 
+PIXEL_GLYPHS = {
+    "0": ("01110", "10001", "10011", "10101", "11001", "10001", "01110"),
+    "1": ("00100", "01100", "00100", "00100", "00100", "00100", "01110"),
+    "2": ("01110", "10001", "00001", "00010", "00100", "01000", "11111"),
+    "3": ("11110", "00001", "00001", "01110", "00001", "00001", "11110"),
+    "4": ("00010", "00110", "01010", "10010", "11111", "00010", "00010"),
+    "5": ("11111", "10000", "10000", "11110", "00001", "00001", "11110"),
+    "6": ("01110", "10000", "10000", "11110", "10001", "10001", "01110"),
+    "7": ("11111", "00001", "00010", "00100", "01000", "01000", "01000"),
+    "8": ("01110", "10001", "10001", "01110", "10001", "10001", "01110"),
+    "9": ("01110", "10001", "10001", "01111", "00001", "00001", "01110"),
+    ":": ("00000", "00100", "00100", "00000", "00100", "00100", "00000"),
+    "-": ("00000", "00000", "00000", "11111", "00000", "00000", "00000"),
+    "d": ("00001", "00001", "01111", "10001", "10001", "10011", "01101"),
+    " ": ("00000", "00000", "00000", "00000", "00000", "00000", "00000"),
+}
+
 ASSET_DIR = Path(__file__).resolve().parent / "assets"
 DRAFT_DIR = Path.home() / "Documents" / "dotnay"
 
@@ -113,7 +130,6 @@ class NaylaApp(tk.Tk):
         )
         self.font_ui = tkfont.Font(root=self, family=family, size=9)
         self.font_chip = tkfont.Font(root=self, family=family, size=9, weight="bold")
-        self.font_timer_label = tkfont.Font(root=self, family=family, size=17, weight="bold")
         self.font_editor = tkfont.Font(root=self, family=family, size=13)
         self.font_count = tkfont.Font(root=self, family=family, size=16, weight="bold")
         self.font_status = tkfont.Font(root=self, family=family, size=8)
@@ -122,9 +138,6 @@ class NaylaApp(tk.Tk):
         top = tk.Frame(self, bg=BG)
         top.pack(fill="x", padx=54, pady=(28, 0))
 
-        tk.Label(
-            top, text="dies in…", bg=BG, fg=TEXT, font=self.font_timer_label
-        ).pack(side="left", anchor="s", pady=(0, 7))
         self.count = tk.Canvas(top, width=300, height=40, bg=BG, highlightthickness=0)
         self.count.pack(side="right")
         self._paint_countdown("--:--:--")
@@ -137,7 +150,7 @@ class NaylaApp(tk.Tk):
         self.status.pack(side="left")
         self.save_button = tk.Button(
             bottom,
-            text="START",
+            text="SAVE",
             command=self._save,
             bg=PAPER,
             fg=TEXT,
@@ -184,11 +197,8 @@ class NaylaApp(tk.Tk):
         if self._suspended or self._fading:
             return
         self._dirty = True
-        self.save_button.configure(
-            text="START" if self._path is None else "SAVE CHANGES",
-            state="normal",
-        )
-        self._status_note("unsaved changes")
+        self._update_save_button()
+        self._status_to_name()
 
     def _draft_path(self) -> Path:
         DRAFT_DIR.mkdir(parents=True, exist_ok=True)
@@ -226,7 +236,7 @@ class NaylaApp(tk.Tk):
 
         self._dirty = False
         self._update_save_button()
-        self._status_note(f"{self._path.name}  -  saved", hold=1400)
+        self._status_to_name()
 
     def _show_timer_dialog(self) -> None:
         if self._timer_dialog is not None:
@@ -244,10 +254,10 @@ class NaylaApp(tk.Tk):
         body.pack(fill="both", expand=True)
         tk.Label(
             body,
-            text="Set how long this note lasts",
+            text="dies in...",
             bg=BG,
             fg=TEXT,
-            font=self.font_ui,
+            font=self.font_count,
         ).pack(anchor="w", pady=(0, 14))
 
         fields = tk.Frame(body, bg=BG)
@@ -308,7 +318,7 @@ class NaylaApp(tk.Tk):
             self._expiry_at = expires_at
             self._dirty = False
             self._update_save_button()
-            self._status_note(f"{path.name}  -  saved", hold=1400)
+            self._status_to_name()
             self._paint_countdown(format_remaining(expires_at - datetime.now()))
             dialog.destroy()
             self._timer_dialog = None
@@ -316,7 +326,7 @@ class NaylaApp(tk.Tk):
 
         tk.Button(
             body,
-            text="START",
+            text="SAVE",
             command=start_timer,
             bg=RED,
             fg=TEXT,
@@ -342,11 +352,11 @@ class NaylaApp(tk.Tk):
 
     def _update_save_button(self) -> None:
         if self._path is None:
-            self.save_button.configure(text="START", state="normal")
+            self.save_button.configure(text="SAVE", state="normal")
         elif self._dirty:
-            self.save_button.configure(text="SAVE CHANGES", state="normal")
+            self.save_button.configure(text="SAVE", state="normal")
         else:
-            self.save_button.configure(text="SAVED", state="disabled")
+            self.save_button.configure(text="SAVE", state="disabled")
 
     # -- countdown ---------------------------------------------------------
 
@@ -362,34 +372,43 @@ class NaylaApp(tk.Tk):
         self._tick_job = self.after(200, self._tick)
 
     def _paint_countdown(self, text: str, urgent: bool = False) -> None:
-        """Draw the countdown with a soft red glow (Tk has no real blur)."""
+        """Draw a crisp pixel-font countdown using square canvas cells."""
         self.count.delete("all")
         width = self.count.winfo_width()
         height = self.count.winfo_height()
         if width < 50:  # not laid out yet
             width, height = 300, 40
-        center_x, center_y = width / 2, height / 2
-
+        columns = len(text) * 6 - 1
+        scale = max(1, min(4, (width - 8) // columns, (height - 8) // 7))
+        text_width = columns * scale
+        left = (width - text_width) / 2
+        top = (height - 7 * scale) / 2
         pulse = 0.5 + 0.5 * math.sin(time.monotonic() * (6.0 if urgent else 1.6))
-        for step in (3, 2, 1):
-            shade = mix(BG, RED, 0.08 + 0.07 * step)
-            for dx, dy in (
-                (step, 0), (-step, 0), (0, step), (0, -step),
-                (step, step), (step, -step), (-step, step), (-step, -step),
-            ):
-                self.count.create_text(
-                    center_x + dx,
-                    center_y + dy,
-                    text=text,
-                    font=self.font_count,
-                    fill=shade,
-                    anchor="center",
-                )
-
         bright = mix(RED, "#ffffff", 0.10 + 0.18 * pulse)
-        self.count.create_text(
-            center_x, center_y, text=text, font=self.font_count, fill=bright, anchor="center"
-        )
+        for char_index, char in enumerate(text):
+            glyph = PIXEL_GLYPHS[char]
+            for row, pattern in enumerate(glyph):
+                for column, pixel in enumerate(pattern):
+                    if pixel != "1":
+                        continue
+                    x = left + (char_index * 6 + column) * scale
+                    y = top + row * scale
+                    self.count.create_rectangle(
+                        x + 1,
+                        y + 1,
+                        x + scale + 1,
+                        y + scale + 1,
+                        fill=RED_SELECT,
+                        outline="",
+                    )
+                    self.count.create_rectangle(
+                        x,
+                        y,
+                        x + scale,
+                        y + scale,
+                        fill=bright,
+                        outline="",
+                    )
 
     # -- the end -----------------------------------------------------------
 
@@ -485,7 +504,10 @@ class NaylaApp(tk.Tk):
 
     def _status_to_name(self) -> None:
         self._status_job = None
-        name = self._path.name if self._path is not None else ""
+        if self._path is not None:
+            name = self._path.name + ("*" if self._dirty else "")
+        else:
+            name = "untitled*" if self._dirty else ""
         self.status.configure(text=name, fg=MUTED)
 
     # -- lifecycle ---------------------------------------------------------

@@ -86,11 +86,12 @@ nayla examples/short-lived.nayla
 ## Desktop app
 
 One calm screen: a large note editor, a prominent countdown at the top, and a
-save button with generous bottom spacing. There is no open button; launch a
+save button with generous bottom spacing. Edited files show an asterisk after
+their filename until changes are saved. There is no open button; launch a
 `.nayla` file to reopen it.
 
-- **Save and timer.** Write your note and click `START`. Set the timer with
-  hour, minute, and second fields, then click `START` to save. A new note is
+- **Save and timer.** Write your note and click `SAVE`. Set the timer with
+  hour, minute, and second fields, then click `SAVE` to save. A new note is
   created in `Documents/dotnay/`; its name is shown quietly at the bottom.
 - **Reopen.** The note text remains editable and can be saved, but the
   countdown at the top is locked and continues from its original deadline.
