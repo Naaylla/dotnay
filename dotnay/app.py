@@ -113,6 +113,7 @@ class NaylaApp(tk.Tk):
         )
         self.font_ui = tkfont.Font(root=self, family=family, size=9)
         self.font_chip = tkfont.Font(root=self, family=family, size=9, weight="bold")
+        self.font_timer_label = tkfont.Font(root=self, family=family, size=17, weight="bold")
         self.font_editor = tkfont.Font(root=self, family=family, size=13)
         self.font_count = tkfont.Font(root=self, family=family, size=16, weight="bold")
         self.font_status = tkfont.Font(root=self, family=family, size=8)
@@ -122,34 +123,14 @@ class NaylaApp(tk.Tk):
         top.pack(fill="x", padx=54, pady=(28, 0))
 
         tk.Label(
-            top, text="dies in…", bg=BG, fg=MUTED, font=self.font_ui
+            top, text="dies in…", bg=BG, fg=TEXT, font=self.font_timer_label
         ).pack(side="left", anchor="s", pady=(0, 7))
         self.count = tk.Canvas(top, width=300, height=40, bg=BG, highlightthickness=0)
         self.count.pack(side="right")
         self._paint_countdown("--:--:--")
 
-        # One big, borderless text box with space around it.
-        self.note = tk.Text(
-            self,
-            bg=PAPER,
-            fg=TEXT,
-            insertbackground=RED,
-            selectbackground=RED_SELECT,
-            selectforeground=TEXT,
-            bd=0,
-            highlightthickness=0,
-            wrap="word",
-            undo=True,
-            font=self.font_editor,
-            padx=22,
-            pady=20,
-        )
-        self.note.pack(fill="both", expand=True, padx=54, pady=(26, 10))
-        self.note.bind("<<Modified>>", self._on_modified)
-        self.note.focus_set()
-
         bottom = tk.Frame(self, bg=BG)
-        bottom.pack(fill="x", padx=54, pady=(0, 32))
+        bottom.pack(side="bottom", fill="x", padx=54, pady=(0, 32))
         self.status = tk.Label(
             bottom, text="", bg=BG, fg=MUTED, font=self.font_status, anchor="w"
         )
@@ -171,6 +152,27 @@ class NaylaApp(tk.Tk):
             pady=8,
         )
         self.save_button.pack(side="right")
+
+        # One big, borderless text box with space around it.
+        self.note = tk.Text(
+            self,
+            bg=PAPER,
+            fg=TEXT,
+            insertbackground=RED,
+            selectbackground=RED_SELECT,
+            selectforeground=TEXT,
+            bd=0,
+            highlightthickness=0,
+            wrap="word",
+            undo=True,
+            font=self.font_editor,
+            padx=22,
+            pady=20,
+        )
+        self.note.pack(fill="both", expand=True, padx=54, pady=(26, 10))
+        self.note.bind("<<Modified>>", self._on_modified)
+        self.note.focus_set()
+
         self.bind("<Control-s>", lambda _event: self._save())
 
     # -- saving ------------------------------------------------------------
