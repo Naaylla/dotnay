@@ -103,12 +103,12 @@ reopen it.
   user to display the burning-N icon in Explorer and open notes with dotnay:
 
   ```powershell
-  pip install -e .
   python -m dotnay.file_association
   ```
 
   This sets dotnay as the default app for `.nayla` files for the current user.
-  Windows may take a moment to refresh existing file icons.
+  The command works from the project folder and does not require installing
+  dotnay first. Windows may take a moment to refresh existing file icons.
 
 Requires only Python and Tkinter (bundled with the official Windows/macOS
 installers):

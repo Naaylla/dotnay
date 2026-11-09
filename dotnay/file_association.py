@@ -12,11 +12,17 @@ ASSOCIATION_ID = "dotnay.nayla"
 FILE_EXTENSION = ".nayla"
 REGISTRY_CLASSES = r"Software\Classes"
 ASSET_DIR = Path(__file__).resolve().parent / "assets"
+PROJECT_ROOT = ASSET_DIR.parent.parent
 
 
-def build_open_command(executable: str | Path) -> str:
-    """Build the Explorer open command, preserving paths with spaces."""
-    command = subprocess.list2cmdline([str(executable), "-m", "dotnay.app"])
+def build_open_command(executable: str | Path, project_root: Path = PROJECT_ROOT) -> str:
+    """Build an Explorer command that works without an installed dotnay package."""
+    code = (
+        f"import sys; sys.path.insert(0, {str(project_root)!r}); "
+        "from dotnay.app import main; "
+        "raise SystemExit(main([sys.argv[1]]))"
+    )
+    command = subprocess.list2cmdline([str(executable), "-c", code])
     return f'{command} "%1"'
 
 
@@ -48,7 +54,11 @@ def register() -> None:
         f"{classes}\\{ASSOCIATION_ID}\\shell\\open\\command",
     ) as key:
         winreg.SetValueEx(
-            key, None, 0, winreg.REG_SZ, build_open_command(pythonw)
+            key,
+            None,
+            0,
+            winreg.REG_SZ,
+            build_open_command(pythonw, PROJECT_ROOT),
         )
 
     ctypes.windll.shell32.SHChangeNotify(0x08000000, 0, None, None)
