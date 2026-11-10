@@ -1,5 +1,9 @@
 # dotnay — timed, self-deleting notes
 
+<p align="center">
+  <img src="docs/screenshots/explorer-nayla-note.png" alt="The dotnay note file in Windows Explorer">
+</p>
+
 dotnay is a plain-text note app that deletes each note when its timer expires.
 
 A `.nayla` file is ordinary UTF-8 text with a timer attached. When the timer
