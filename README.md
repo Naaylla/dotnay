@@ -1,6 +1,6 @@
-# dotnay — notes with commitment issues
+# dotnay — timed, self-deleting notes
 
-Write a note. Watch it lose the will to live.
+dotnay is a plain-text note app that deletes each note when its timer expires.
 
 A `.nayla` file is ordinary UTF-8 text with a timer attached. When the timer
 runs out in the desktop app, the note fades away and the file is deleted.
