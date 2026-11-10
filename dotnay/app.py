@@ -19,6 +19,7 @@ from tkinter import filedialog, font as tkfont, messagebox
 from typing import Optional
 
 from .parser import NaylaError, load_nayla
+from .resources import asset_dir
 from .timefmt import format_remaining
 from .writer import write_nayla
 
@@ -44,11 +45,16 @@ PIXEL_GLYPHS = {
     "9": ("01110", "10001", "10001", "01111", "00001", "00001", "01110"),
     ":": ("00000", "00100", "00100", "00000", "00100", "00100", "00000"),
     "-": ("00000", "00000", "00000", "11111", "00000", "00000", "00000"),
+    ".": ("00000", "00000", "00000", "00000", "00000", "01100", "01100"),
     "d": ("00001", "00001", "01111", "10001", "10001", "10011", "01101"),
+    "e": ("00000", "00000", "01110", "10001", "11111", "10000", "01110"),
+    "i": ("00100", "00000", "00100", "00100", "00100", "00100", "00100"),
+    "n": ("00000", "00000", "10110", "11001", "10001", "10001", "10001"),
+    "s": ("00000", "00000", "01110", "10000", "01110", "00001", "11110"),
     " ": ("00000", "00000", "00000", "00000", "00000", "00000", "00000"),
 }
 
-ASSET_DIR = Path(__file__).resolve().parent / "assets"
+ASSET_DIR = asset_dir()
 DRAFT_DIR = Path.home() / "Documents" / "dotnay"
 
 # --- colour helpers --------------------------------------------------------
@@ -66,6 +72,28 @@ def _hex(rgb) -> str:
 def mix(first: str, second: str, amount: float) -> str:
     """Blend two colours; 0 = first, 1 = second."""
     return _hex(tuple(a + (b - a) * amount for a, b in zip(_rgb(first), _rgb(second))))
+
+
+def paint_pixel_text(canvas, text: str, scale: int, color: str, shadow: Optional[str] = None) -> None:
+    """Draw text with the square-cell pixel font, top-left at the canvas origin."""
+    for char_index, char in enumerate(text):
+        glyph = PIXEL_GLYPHS.get(char)
+        if glyph is None:
+            continue
+        for row, pattern in enumerate(glyph):
+            for column, pixel in enumerate(pattern):
+                if pixel != "1":
+                    continue
+                x = (char_index * 6 + column) * scale
+                y = row * scale
+                if shadow is not None:
+                    canvas.create_rectangle(
+                        x + 1, y + 1, x + scale + 1, y + scale + 1,
+                        fill=shadow, outline="",
+                    )
+                canvas.create_rectangle(
+                    x, y, x + scale, y + scale, fill=color, outline="",
+                )
 
 
 # --- the app ---------------------------------------------------------------
@@ -200,14 +228,14 @@ class NaylaApp(tk.Tk):
         self._dirty = True
         self._update_save_button()
         self._update_window_title()
-        self._status_to_name()
+        self._clear_status()
 
     def _save(self) -> None:
         """Save the note, asking for its one-time timer and filename first."""
         if self._fading or self._closing:
             return
         content = self.note.get("1.0", "end-1c")
-        if self._path is None:
+        if self._path is None or self._expiry_at is None:
             if not content.strip():
                 self._status_note("write something first", color=RED, hold=3000)
                 return  # nothing worth saving yet
@@ -229,7 +257,7 @@ class NaylaApp(tk.Tk):
         self._dirty = False
         self._update_save_button()
         self._update_window_title()
-        self._status_to_name()
+        self._clear_status()
 
     def _show_timer_dialog(self) -> None:
         if self._timer_dialog is not None:
@@ -245,13 +273,25 @@ class NaylaApp(tk.Tk):
 
         body = tk.Frame(dialog, bg=BG, padx=24, pady=20)
         body.pack(fill="both", expand=True)
-        tk.Label(
+        title = "dies in..."
+        title_scale = 4
+        title_columns = len(title) * 6 - 1
+        title_canvas = tk.Canvas(
             body,
-            text="dies in...",
+            width=title_columns * title_scale,
+            height=7 * title_scale,
             bg=BG,
-            fg=TEXT,
-            font=self.font_count,
-        ).pack(anchor="w", pady=(0, 14))
+            bd=0,
+            highlightthickness=0,
+        )
+        title_canvas.pack(anchor="w", pady=(0, 14))
+        paint_pixel_text(
+            title_canvas,
+            title,
+            title_scale,
+            color=mix(RED, "#ffffff", 0.18),
+            shadow=RED_SELECT,
+        )
 
         fields = tk.Frame(body, bg=BG)
         fields.pack(anchor="w")
@@ -298,26 +338,30 @@ class NaylaApp(tk.Tk):
                 error.configure(text="set a timer longer than zero")
                 return
 
-            try:
-                DRAFT_DIR.mkdir(parents=True, exist_ok=True)
-            except OSError as exc:
-                error.configure(text=f"could not open save location: {exc}")
-                return
+            if self._path is not None:
+                # An empty file created by Explorer's New menu keeps its path.
+                path = self._path
+            else:
+                try:
+                    DRAFT_DIR.mkdir(parents=True, exist_ok=True)
+                except OSError as exc:
+                    error.configure(text=f"could not open save location: {exc}")
+                    return
 
-            selected_path = filedialog.asksaveasfilename(
-                parent=dialog,
-                title="Save note",
-                initialdir=str(DRAFT_DIR),
-                initialfile="untitled.nayla",
-                defaultextension=".nayla",
-                filetypes=(("Nayla notes", "*.nayla"), ("All files", "*.*")),
-            )
-            if not selected_path:
-                return
+                selected_path = filedialog.asksaveasfilename(
+                    parent=dialog,
+                    title="Save note",
+                    initialdir=str(DRAFT_DIR),
+                    initialfile="untitled.nayla",
+                    defaultextension=".nayla",
+                    filetypes=(("Nayla notes", "*.nayla"), ("All files", "*.*")),
+                )
+                if not selected_path:
+                    return
 
-            path = Path(selected_path)
-            if path.suffix.lower() != ".nayla":
-                path = path.with_suffix(".nayla")
+                path = Path(selected_path)
+                if path.suffix.lower() != ".nayla":
+                    path = path.with_suffix(".nayla")
 
             started_at = datetime.now().replace(microsecond=0)
             expires_at = started_at + duration
@@ -333,7 +377,7 @@ class NaylaApp(tk.Tk):
             self._dirty = False
             self._update_save_button()
             self._update_window_title()
-            self._status_to_name()
+            self._clear_status()
             self._paint_countdown(format_remaining(expires_at - datetime.now()))
             dialog.destroy()
             self._timer_dialog = None
@@ -476,9 +520,29 @@ class NaylaApp(tk.Tk):
 
     # -- opening a file ----------------------------------------------------
 
+    def _open_blank_note(self, path: Path) -> None:
+        """Treat an empty .nayla from Explorer's New menu as a fresh note."""
+        self._path = path
+        self._expiry_at = None
+        self._dirty = False
+        self._fading = False
+        self._update_window_title()
+        self._suspended = True
+        self.note.configure(state="normal", fg=TEXT)
+        self.note.delete("1.0", "end")
+        self.note.edit_modified(False)
+        self._suspended = False
+        self._update_save_button()
+        self._clear_status()
+        self._paint_countdown("--:--:--")
+        self.note.focus_set()
+
     def open_path(self, path) -> None:
         """Called when the app is launched with a .nayla path (double-click)."""
         path = Path(path).expanduser()
+        if path.is_file() and path.stat().st_size == 0:
+            self._open_blank_note(path)
+            return
         try:
             document = load_nayla(path)
         except NaylaError as exc:
@@ -506,7 +570,7 @@ class NaylaApp(tk.Tk):
         self._suspended = False
 
         self._update_save_button()
-        self._status_to_name()
+        self._clear_status()
         self.note.focus_set()
         self._paint_countdown(
             format_remaining(document.remaining()),
@@ -521,27 +585,28 @@ class NaylaApp(tk.Tk):
             self._status_job = None
         self.status.configure(text=text, fg=color)
         if hold:
-            self._status_job = self.after(hold, self._status_to_name)
+            self._status_job = self.after(hold, self._clear_status)
 
-    def _status_to_name(self) -> None:
+    def _clear_status(self) -> None:
         self._status_job = None
-        name = self._path.name if self._path is not None else ""
-        self.status.configure(text=name, fg=MUTED)
+        self.status.configure(text="", fg=MUTED)
 
     # -- lifecycle ---------------------------------------------------------
 
     def _on_close(self) -> None:
         """Save changes to an already-timed note before closing."""
-        if self._path is None and self._dirty and self.note.get("1.0", "end-1c").strip():
-            discard = messagebox.askyesno(
-                "Unsaved note",
-                "This note has not been saved or timed yet. Discard it?",
-                parent=self,
-            )
-            if not discard:
-                return
+        content = self.note.get("1.0", "end-1c")
+        if self._expiry_at is None:
+            if self._dirty and content.strip():
+                discard = messagebox.askyesno(
+                    "Unsaved note",
+                    "This note has not been saved or timed yet. Discard it?",
+                    parent=self,
+                )
+                if not discard:
+                    return
         elif self._path is not None and self._dirty:
-            self._save_existing(self.note.get("1.0", "end-1c"))
+            self._save_existing(content)
             if self._dirty:
                 return
         self._close_timer_dialog()
@@ -582,6 +647,12 @@ def main(argv=None) -> int:
             pass
 
     args = list(sys.argv[1:] if argv is None else argv)
+
+    if args and args[0] in ("--register", "-r"):
+        from .file_association import main as register_main
+
+        return register_main()
+
     app = NaylaApp(initial_file=args[0] if args else None)
     app.mainloop()
     return 0

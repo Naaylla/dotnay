@@ -1,12 +1,47 @@
-# dotnay
+# dotnay — notes with commitment issues
 
-A tiny, self-destructing plain-text note format with the extension `.nayla`.
+Write a note. Watch it lose the will to live.
 
-A `.nayla` file is ordinary text. You can create one in any editor, save it, and it becomes invalid once its expiry is reached. The viewer deletes it; the background checker removes it even if nobody opens it.
+A `.nayla` file is ordinary UTF-8 text with a timer attached. When the timer
+runs out in the desktop app, the note fades away and the file is deleted.
+
+This is file deletion, not secure erasure: backups, sync services, and copies
+you made elsewhere are not magically deleted too. dotnay is a timer with
+boundaries, not a forensic-destruction service :|
+
+## For users
+
+1. Download `dotnay-setup.exe` from Releases.
+2. Double-click it and click **Next** a few times. No administrator prompt,
+   no summoning ritual.
+3. Open **dotnay** from the Start Menu, double-click a `.nayla` file, or
+   right-click in Explorer and choose **New > dotnay note**.
+
+The installer registers `.nayla`, adds a Start Menu shortcut, and offers an
+optional desktop shortcut. No Python setup required. Uninstall from
+**Settings > Apps** if your notes have reconciled with mortality.
+
+## The desktop app
+
+One dark editor, one red countdown, one SAVE button. Type first; then SAVE asks
+how long the note has left. Reopen a saved note to edit it, but its original
+deadline stays put. The timer does not reset just because the note got a
+second draft.
+
+A note created with **New > dotnay note** starts as an empty file. Its name is
+kept, and dotnay writes the actual note format the first time you save it.
+
+<p align="center">
+  <img src="docs/screenshots/editor-unsaved.png" width="48%" alt="Writing a note in the dotnay editor">
+  <img src="docs/screenshots/timer-setup.png" width="48%" alt="Choosing how long the note should live">
+</p>
+<p align="center">
+  <img src="docs/screenshots/editor-countdown.png" width="75%" alt="A saved note with its countdown running">
+</p>
 
 ## Format specification
 
-A file is UTF-8 text with three required lines at the top, followed by the note:
+A `.nayla` file is a plain UTF-8 text. Three required lines at the top, then the note:
 
 ```
 NAYLA
@@ -15,9 +50,9 @@ expires: 24h
 The content of the note goes here.
 ```
 
-### Rules
+### The rules (yes, there are rules)
 
-1. Line 1 must be exactly `NAYLA` (case-sensitive). A UTF-8 BOM is tolerated.
+1. Line 1 must be exactly `NAYLA` (case-sensitive). A UTF-8 BOM is tolerated;
 2. Line 2 must start with `expires:` followed by one of:
    - A duration: a positive integer and a unit, `s`, `m`, `h`, or `d`.
      Examples: `30s`, `15m`, `24h`, `7d`.
@@ -25,8 +60,10 @@ The content of the note goes here.
      `YYYY-MM-DD HH:MM:SS` form.
      Example: `2026-11-04 18:00` or `2026-11-04 18:00:30`.
 3. Line 3 must be exactly `---`.
-4. Everything after line 3 is the note, preserved verbatim, including blank lines and trailing newlines.
-5. CRLF and LF line endings are both accepted.
+4. Everything after line 3 is the note, preserved verbatim, including blank
+   lines and trailing newlines. The note may ramble; the header may not.
+5. CRLF and LF line endings are both accepted. Windows and Unix can stop
+   arguing about line endings for at least one file.
 
 ### Expiry semantics
 
@@ -35,7 +72,9 @@ The content of the note goes here.
   - macOS: birth time.
   - Linux: birth time when the filesystem provides it, otherwise the last-modified time.
 - An exact date is interpreted as local time and does not depend on creation time.
-- A file is expired when the current time is at or after the computed expiry. Expired files are still parseable so a viewer can show them before deleting.
+- A file is expired when the current time is at or after the computed expiry.
+  The format can still be parsed; the desktop app deletes an expired note
+  rather than pretending it is still alive.
 
 ### Duration units
 
@@ -48,7 +87,7 @@ The content of the note goes here.
 
 ## Examples
 
-See the `examples/` folder:
+See the `examples/` folder.
 
 - `quick-note.nayla` - lasts 24 hours from creation.
 - `short-lived.nayla` - lasts 30 minutes from creation.
@@ -83,22 +122,19 @@ pip install -e .
 nayla examples/short-lived.nayla
 ```
 
-## Desktop app
-
-One calm screen: a large note editor, a prominent countdown at the top, and a
-save button with generous bottom spacing. Edited files show an asterisk after
-their filename in the window title bar until changes are saved. A new note is
-shown as `untitled.nayla`. There is no open button; launch a `.nayla` file to
-reopen it.
+## Desktop app details
 
 - **Save and timer.** Write your note and click `SAVE`. Set the timer with
-  hour, minute, and second fields, then click `SAVE` to open the standard
-  Save As dialog. It starts with `untitled.nayla`; choose a different name if
-  you like. The timer begins when the file is saved.
+  hour, minute, and second fields, then click `SAVE`. A note opened from an
+  existing `.nayla` file saves back to it; otherwise the standard Save As
+  dialog opens with `untitled.nayla`. The timer begins when the file is saved.
 - **Reopen.** The note text remains editable and can be saved, but the
-  countdown at the top is locked and continues from its original deadline.
-- **The end.** The countdown keeps running while you edit. At zero the text
-  fades into the background, then the `.nayla` file is deleted.
+  countdown at the top is locked to its original deadline. Editing is not
+  time travel.
+- **The end.** The countdown keeps running while the app is open. At zero the
+  text fades into the background, then the `.nayla` file is deleted. If the
+  app is closed, it cannot hover over the file menacingly; an expired note is
+  removed when dotnay next opens it.
 - **Windows file icon.** Register the `.nayla` extension for your Windows
   user to display the burning-N icon in Explorer and open notes with dotnay:
 
@@ -109,6 +145,12 @@ reopen it.
   This sets dotnay as the default app for `.nayla` files for the current user.
   The command works from the project folder and does not require installing
   dotnay first. Windows may take a moment to refresh existing file icons.
+
+  A standalone build can register itself instead:
+
+  ```powershell
+  dist\dotnay.exe --register
+  ```
 
 Requires only Python and Tkinter (bundled with the official Windows/macOS
 installers):
@@ -128,52 +170,52 @@ dotnay
 Look: near-black background, a single "N" in the corner, red accents, one
 font, and a softly pulsing red countdown. The icon is a burning pixel-art N.
 
-## Project layout
+## Standalone Windows app
 
-```
-dotnay/
-  dotnay/
-    __init__.py
-    parser.py
-    writer.py
-    timefmt.py
-    cli.py
-    app.py
-    file_association.py
-    assets/
-      nayla.png
-      nayla.ico
-  examples/
-    quick-note.nayla
-    short-lived.nayla
-    exact-date.nayla
-  tests/
-    test_file_association.py
-    test_parser.py
-    test_writer.py
-    test_timefmt.py
-  tools/
-    make_icon.py
-  pyproject.toml
-  README.md
-```
-
-The icon is generated from a 32x32 pixel grid with the standard library only:
+Build a single `dotnay.exe` with PyInstaller. Python, Tkinter, and the icons are
+bundled, so the result runs on machines without Python installed:
 
 ```powershell
-python tools/make_icon.py
+pip install pyinstaller
+python -m PyInstaller --noconfirm dotnay.spec
 ```
 
-## Tests
+The executable is written to `dist/dotnay.exe`. It can live anywhere; put it in
+a folder you keep, then register the file type from that exact location:
 
 ```powershell
-python -m unittest discover -s tests -t . -v
+dist\dotnay.exe --register
 ```
 
-## Roadmap
+Double-clicking a `.nayla` file now opens it in the app, with the burning-N
+icon. The registration stores the full path to the `.exe`, so re-run
+`--register` after moving or renaming it. Set `DOTNAY_NO_UI=1` to skip the
+confirmation dialog when registering from a script or installer.
 
-1. Parser and format specification (done).
-2. Single-screen editor with manual save, a one-time timer, live countdown,
-   and self-deletion (done).
-3. `.nayla` file association for double-click opening (no "Open" button).
-4. Background checker that removes expired files.
+## Build the installer
+
+The installer wraps the standalone app so users only need to download and
+double-click it.
+
+1. Install [Inno Setup](https://jrsoftware.org/isdl.php) (version 6 or newer;
+   7 works too).
+2. Run the build script from the project folder:
+
+   ```powershell
+   powershell -ExecutionPolicy Bypass -File tools\build_installer.ps1
+   ```
+
+The script builds `dist\dotnay.exe` with PyInstaller, compiles
+`installer\dotnay.iss`, and prints the installer path: `dist\dotnay-setup.exe`.
+
+The installer is per-user (no administrator prompt), installs to
+`%LOCALAPPDATA%\Programs\dotnay`, registers `.nayla` files in
+`HKCU\Software\Classes`, adds the Explorer **New > dotnay note** entry, adds a
+Start Menu shortcut and an optional desktop shortcut, and includes an
+uninstaller. A fixed `AppId` means a newer `dotnay-setup.exe` upgrades the
+existing install in place.
+
+---
+
+*If you made it all the way down here, congratulations: this README has
+outlived at least one note. Go write something worth deleting.*

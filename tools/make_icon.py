@@ -1,12 +1,12 @@
-"""Generate the burning-N favicon (PNG + ICO) using only the stdlib.
+"""Build the favicon assets from the source emblem.
 
 Run from the repo root:
 
     python tools/make_icon.py
 
-A 32x32 pixel grid: a red-hot "N" with flame tongues rising off its top
-edge and a few drifting embers. Outputs dotnay/assets/nayla.png (256x256)
-and dotnay/assets/nayla.ico (multi-size).
+Reads dotnay/assets/nayla_art.png (the canonical artwork) and writes
+dotnay/assets/nayla.png (256x256) plus dotnay/assets/nayla.ico (multi-size).
+Uses only the standard library.
 """
 
 from __future__ import annotations
@@ -15,107 +15,153 @@ import struct
 import zlib
 from pathlib import Path
 
-GRID = 32
 ASSETS = Path(__file__).resolve().parent.parent / "dotnay" / "assets"
-
-# The N sits low on the grid so there is room for flames above it.
-TOP, BOTTOM = 9, 30
-LEFT_STEM = (9, 13)
-RIGHT_STEM = (26, 30)
-
-# Colour of the N itself, left to right (orange -> red).
-BODY_STOPS = [
-    (9, (255, 150, 0)),
-    (18, (255, 70, 16)),
-    (30, (214, 24, 10)),
-]
-
-# Height of the flame tongue above each column of the N (x = 9..30).
-FLAME_HEIGHTS = (3, 2, 4, 2, 3, 2, 4, 3, 2, 3, 4, 2, 3, 2, 4, 3, 2, 3, 2, 4, 3, 2)
-
-# Detached embers / sparks.
-SPARKS = [
-    (5, 8), (8, 5), (11, 4), (14, 2), (18, 5), (21, 3), (24, 2), (28, 4),
-    (31, 7), (3, 16), (4, 22), (2, 27), (6, 29), (7, 19),
-]
+SOURCE = ASSETS / "nayla_art.png"
+ICON_SIZE = 256
+FILL = 1.0  # fraction of the icon the artwork should occupy
+ICO_SIZES = (16, 24, 32, 48, 64, 128, 256)
 
 
-def lerp(first, second, amount):
-    return tuple(
-        max(0, min(255, round(a + (b - a) * amount))) for a, b in zip(first, second)
-    )
+def read_png(path: Path):
+    """Decode an 8-bit, non-interlaced RGBA PNG into rows of (r, g, b, a)."""
+    data = path.read_bytes()
+    if data[:8] != b"\x89PNG\r\n\x1a\n":
+        raise ValueError(f"{path} is not a PNG")
+
+    pos = 8
+    width = height = 0
+    idat = bytearray()
+    while pos < len(data):
+        length = struct.unpack(">I", data[pos:pos + 4])[0]
+        tag = data[pos + 4:pos + 8]
+        body = data[pos + 8:pos + 8 + length]
+        pos += 12 + length
+        if tag == b"IHDR":
+            width, height, depth, color, _comp, _filt, interlace = struct.unpack(
+                ">IIBBBBB", body
+            )
+            if depth != 8 or color != 6 or interlace != 0:
+                raise ValueError("expected an 8-bit, non-interlaced RGBA PNG")
+        elif tag == b"IDAT":
+            idat += body
+        elif tag == b"IEND":
+            break
+
+    raw = zlib.decompress(bytes(idat))
+    stride = width * 4
+    rows = []
+    previous = bytearray(stride)
+    offset = 0
+    for _ in range(height):
+        kind = raw[offset]
+        offset += 1
+        line = bytearray(raw[offset:offset + stride])
+        offset += stride
+        if kind == 1:  # Sub
+            for i in range(4, stride):
+                line[i] = (line[i] + line[i - 4]) & 0xFF
+        elif kind == 2:  # Up
+            for i in range(stride):
+                line[i] = (line[i] + previous[i]) & 0xFF
+        elif kind == 3:  # Average
+            for i in range(stride):
+                left = line[i - 4] if i >= 4 else 0
+                line[i] = (line[i] + ((left + previous[i]) >> 1)) & 0xFF
+        elif kind == 4:  # Paeth
+            for i in range(stride):
+                left = line[i - 4] if i >= 4 else 0
+                up = previous[i]
+                corner = previous[i - 4] if i >= 4 else 0
+                estimate = left + up - corner
+                da = abs(estimate - left)
+                db = abs(estimate - up)
+                dc = abs(estimate - corner)
+                if da <= db and da <= dc:
+                    nearest = left
+                elif db <= dc:
+                    nearest = up
+                else:
+                    nearest = corner
+                line[i] = (line[i] + nearest) & 0xFF
+        elif kind != 0:
+            raise ValueError(f"unsupported PNG filter {kind}")
+        rows.append([tuple(line[i:i + 4]) for i in range(0, stride, 4)])
+        previous = line
+
+    return width, height, rows
 
 
-def body_color(x: int):
-    """Interpolate the red-hot gradient across the N."""
-    for (left_x, left), (right_x, right) in zip(BODY_STOPS, BODY_STOPS[1:]):
-        if x <= right_x:
-            span = right_x - left_x
-            return lerp(left, right, 0 if span == 0 else (x - left_x) / span)
-    return BODY_STOPS[-1][1]
+def content_bbox(rows, cut: int = 16, fraction: float = 0.045):
+    """Bounding box of the dense artwork, ignoring sparse drifting sparks."""
+    height, width = len(rows), len(rows[0])
+    threshold = max(2, round(fraction * max(width, height)))
+    column = [0] * width
+    row = [0] * height
+    for y in range(height):
+        source_row = rows[y]
+        count = 0
+        for x in range(width):
+            if source_row[x][3] > cut:
+                column[x] += 1
+                count += 1
+        row[y] = count
+    xs = [x for x in range(width) if column[x] >= threshold]
+    ys = [y for y in range(height) if row[y] >= threshold]
+    if not xs or not ys:
+        return (0, 0, width - 1, height - 1)
+    return (min(xs), min(ys), max(xs), max(ys))
 
 
-def flame_color(amount: float):
-    """Yellow at the base of a flame, deep red at the tip."""
-    if amount < 0.45:
-        return lerp((255, 236, 120), (255, 150, 0), amount / 0.45)
-    return lerp((255, 150, 0), (196, 18, 10), (amount - 0.45) / 0.55)
-
-
-def n_cells() -> dict[tuple[int, int], tuple[int, int, int]]:
-    """Map each solid cell of the N to its colour."""
-    cells: dict[tuple[int, int], tuple[int, int, int]] = {}
-    for y in range(TOP, BOTTOM + 1):
-        for x in range(LEFT_STEM[0], LEFT_STEM[1] + 1):
-            cells[(x, y)] = body_color(x)
-        for x in range(RIGHT_STEM[0], RIGHT_STEM[1] + 1):
-            cells[(x, y)] = body_color(x)
-        # Thick diagonal from the top-left to the bottom-right.
-        center = LEFT_STEM[0] + (y - TOP) * (RIGHT_STEM[1] - LEFT_STEM[0]) / (BOTTOM - TOP)
-        for x in range(round(center) - 2, round(center) + 3):
-            if 0 <= x < GRID:
-                cells[(x, y)] = body_color(x)
-    return cells
-
-
-def build_grid() -> list[list[tuple[int, int, int, int]]]:
-    grid = [[(0, 0, 0, 0)] * GRID for _ in range(GRID)]
-
-    cells = n_cells()
-    for (x, y), color in cells.items():
-        # Give the bottom edge a hotter, more molten tint.
-        if y >= BOTTOM - 3:
-            color = lerp(color, (255, 196, 0), 0.30)
-        grid[y][x] = (*color, 255)
-
-    # Flames grow upward from the topmost cell of every column of the N.
-    for index, x in enumerate(range(LEFT_STEM[0], RIGHT_STEM[1] + 1)):
-        top = min((y for (cx, y) in cells if cx == x), default=None)
-        if top is None:
-            continue
-        height = FLAME_HEIGHTS[index % len(FLAME_HEIGHTS)]
-        for step in range(1, height + 1):
-            y = top - step
-            if 0 <= y < GRID:
-                grid[y][x] = (*flame_color(step / (height + 0.5)), 255)
-
-    # A few embers drifting off the fire.
-    for index, (x, y) in enumerate(SPARKS):
-        if 0 <= x < GRID and 0 <= y < GRID:
-            color = flame_color(0.25 + (index % 4) * 0.18)
-            grid[y][x] = (*color, 255)
-
-    return grid
-
-
-def scale_nearest(grid, size: int):
-    """Resample the 32x32 grid with nearest-neighbour (keeps pixels crisp)."""
+def centered_square(rows, box, fill: float = FILL):
+    """Crop a square around the artwork so it fills `fill` of the frame."""
+    height, width = len(rows), len(rows[0])
+    min_x, min_y, max_x, max_y = box
+    center_x = (min_x + max_x) / 2
+    center_y = (min_y + max_y) / 2
+    content = max(max_x - min_x + 1, max_y - min_y + 1)
+    side = int(content / fill + 0.999)
+    left = round(center_x - side / 2)
+    top = round(center_y - side / 2)
     result = []
-    for y in range(size):
-        source_y = y * GRID // size
+    for oy in range(side):
+        source_y = top + oy
         row = []
-        for x in range(size):
-            row.append(grid[source_y][x * GRID // size])
+        for ox in range(side):
+            source_x = left + ox
+            if 0 <= source_x < width and 0 <= source_y < height:
+                row.append(rows[source_y][source_x])
+            else:
+                row.append((0, 0, 0, 0))
+        result.append(row)
+    return result
+
+
+def resample(rows, size: int):
+    """Area-average rows down to a size x size image, preserving alpha."""
+    source_height = len(rows)
+    source_width = len(rows[0])
+    result = []
+    for oy in range(size):
+        y0, y1 = oy * source_height // size, (oy + 1) * source_height // size
+        row = []
+        for ox in range(size):
+            x0, x1 = ox * source_width // size, (ox + 1) * source_width // size
+            red = green = blue = alpha = count = 0
+            for y in range(y0, y1):
+                source_row = rows[y]
+                for x in range(x0, x1):
+                    pr, pg, pb, pa = source_row[x]
+                    red += pr * pa
+                    green += pg * pa
+                    blue += pb * pa
+                    alpha += pa
+                    count += 1
+            if alpha == 0:
+                row.append((0, 0, 0, 0))
+            else:
+                row.append(
+                    (red // alpha, green // alpha, blue // alpha, alpha // count)
+                )
         result.append(row)
     return result
 
@@ -172,16 +218,21 @@ def ico_bytes(entries: list[tuple[int, bytes]]) -> bytes:
 
 
 def main() -> None:
-    ASSETS.mkdir(parents=True, exist_ok=True)
-    grid = build_grid()
+    if not SOURCE.exists():
+        raise SystemExit(f"missing source artwork: {SOURCE}")
 
-    large = scale_nearest(grid, 256)
-    (ASSETS / "nayla.png").write_bytes(png_bytes(large))
+    _width, _height, source = read_png(SOURCE)
+    framed = centered_square(source, content_bbox(source))
+    base = resample(framed, ICON_SIZE)
+    (ASSETS / "nayla.png").write_bytes(png_bytes(base))
 
     entries: list[tuple[int, bytes]] = []
-    for size in (16, 24, 32, 48, 64, 128):
-        entries.append((size, bmp_bytes(scale_nearest(grid, size))))
-    entries.append((256, png_bytes(large)))
+    for size in ICO_SIZES:
+        pixels = base if size == ICON_SIZE else resample(base, size)
+        if size <= 64:
+            entries.append((size, bmp_bytes(pixels)))
+        else:
+            entries.append((size, png_bytes(pixels)))
     (ASSETS / "nayla.ico").write_bytes(ico_bytes(entries))
 
     print(f"wrote {ASSETS / 'nayla.png'}")
